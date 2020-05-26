@@ -1,13 +1,21 @@
 const express = require('express');
 const bodyParser = require('body-parser');
+const cookieSession = require('cookie-session');
 const usersRepo = require('./respositories/users');
 
 const app = express();
 
 app.use(bodyParser.urlencoded({ extended: true }));
-app.get('/', (req, res) => {
+
+app.use(
+  cookieSession({
+    keys: ['sgdkjasjldaskldasj'],
+  })
+);
+app.get('/signup', (req, res) => {
   res.send(`
     <div>
+      Your id is ${req.session.userId}
       <form method="POST">
         <input name="email" placeholder="email" />
         <input name="password" placeholder="password" />
@@ -17,42 +25,65 @@ app.get('/', (req, res) => {
     </div>
   `);
 });
-/*
-const bodyParser = (req, res, next) => {
-  if (req.method === 'POST') {
-    req.on('data', data => {
-      const parsed = data.toString('utf8').split('&');
-      const formData = {};
-      for (let pair of parsed) {
-        const [key, value] = pair.split('=');
-        formData[key] = value;
-      }
-      req.body = formData;
-      next();
-    });
-  } else {
-    next();
-  }
-};
-*/
 
-app.post('/', async (req, res) => {
-  const { email, password, passwordConf } = req.body;
+app.post('/signup', async (req, res) => {
+  const { email, password, passwordConfirmation } = req.body;
   const existingUser = await usersRepo.getOneBy({ email });
+  console.log('Existing user is ', existingUser);
+
   if (existingUser) {
     return res.send('Email in use');
   }
-  if (password !== passwordConf) {
+  console.log(passwordConfirmation, password);
+  if (password !== passwordConfirmation) {
     return res.send('Passwords must match');
   }
 
   //Create a user in our repo to represnt this person
-  const userId = await usersRepo.create({ email, password });
+  const user = await usersRepo.create({ email, password });
 
-  //Store the id of that user inside the user's cookie 
-  
+  //Store the id of that user inside the user's cookie
+  req.session.userId = user.id; //added by the cookieSession
 
   res.send('Account created');
+});
+
+app.get('/signout', (req, res) => {
+  req.session = null;
+  res.send('You are logged out');
+});
+
+app.get('/signin', (req, res) => {
+  res.send(`
+  <div>
+    <form method="POST">
+      <input name="email" placeholder="email" />
+      <input name="password" placeholder="password" />
+      <button>Sign In</button>
+    </form>
+  </div>
+`);
+});
+
+app.post('/signin', async (req, res) => {
+  const { email, password } = req.body;
+  const user = await usersRepo.getOneBy({ email });
+  if (!user) {
+    return res.send('Email not found ');
+  }
+
+  const validPassword = await usersRepo.comparePasswords(
+    user.password,
+    password
+  );
+
+  if (!validPassword) {
+    return res.send('Invalid password');
+  }
+
+  req.session.userId = user.id;
+
+  res.send('You are signed in');
 });
 
 app.listen(3000, () => {
